@@ -37,7 +37,7 @@ type ManagedObjectRequest struct {
 	ExternalAccess bool
 }
 
-func CreateK8SObjects(ctx echo.Context) error {
+func DeployUnmanagedObjects(ctx echo.Context) error {
 	req := new(CreateObjectRequest)
 	if err := ctx.Bind(req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, BadRequest)
@@ -89,7 +89,7 @@ func CreateK8SObjects(ctx echo.Context) error {
 	}
 }
 
-func SetManagedObjects(ctx echo.Context) error {
+func DeployManagedObjects(ctx echo.Context) error {
 	req := new(ManagedObjectRequest)
 	if err := ctx.Bind(req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, BadRequest)
