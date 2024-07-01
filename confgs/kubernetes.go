@@ -8,11 +8,10 @@ import (
 
 var Client *kubernetes.Clientset
 
-func CreateClient() error {
+func CreateClient() {
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		log.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 	Client = kubernetes.NewForConfigOrDie(config)
-	return nil
 }
