@@ -12,13 +12,9 @@ import (
 )
 
 const (
-	InternalError   = "Internal server error"
-	BadRequest      = "Request body doesn't have correct format"
-	SecretExist     = "Secret already exists"
-	ConfigExist     = "ConfigMap already exists"
-	DeploymentExist = "Deployment already exists"
-	ServiceExist    = "Service already exists"
-	IngressExist    = "Ingress already exists"
+	InternalError = "Internal server error"
+	BadRequest    = "Request body doesn't have correct format"
+	ObjectExist   = "Object already exists"
 )
 
 type CreateObjectRequest struct {
@@ -57,13 +53,13 @@ func DeployUnmanagedObjects(ctx echo.Context) error {
 		}
 	}
 	appName := strings.ToLower(req.AppName)
-	secret := CreateSecret(secretData, appName)
+	secret := CreateSecret(secretData, appName, false)
 	_, err = configs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
 	if err != nil {
 		println(err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	configMap := CreateConfigMap(configMapData, appName)
+	configMap := CreateConfigMap(configMapData, appName, false)
 	_, err = configs.Client.CoreV1().ConfigMaps("default").Create(context.Background(), configMap, metav1.CreateOptions{})
 	if err != nil {
 		println(err.Error())
@@ -110,18 +106,20 @@ func DeployManagedObjects(ctx echo.Context) error {
 			configMapData[env.Key] = env.Value
 		}
 	}
-	code := PostgresExistence("", secretData)
+	code := PostgresExistence(secretData)
 	if code == "" {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	secret := CreateSecret(secretData, code)
+	secret := CreateSecret(secretData, code, true)
 	_, err := configs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
 	if err != nil {
+		println("secret:", err)
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	configMap := CreateConfigMap(configMapData, code)
+	configMap := CreateConfigMap(configMapData, code, true)
 	_, err = configs.Client.CoreV1().ConfigMaps("default").Create(context.Background(), configMap, metav1.CreateOptions{})
 	if err != nil {
+		println("config:", err)
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	resource := models.Resource{
@@ -131,23 +129,26 @@ func DeployManagedObjects(ctx echo.Context) error {
 	deployment := CreateDeployment(code, "postgres", "13-alpine", 1, 5432, resource, true)
 	_, err = configs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
 	if err != nil {
+		println("deployment:", err)
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	service := CreateService(code, 5432, true)
 	_, err = configs.Client.CoreV1().Services("default").Create(context.Background(), service, metav1.CreateOptions{})
 	if err != nil {
+		println("service:", err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	if req.ExternalAccess {
 		ingressObject := CreateIngress(code, 5432, true)
 		_, err = configs.Client.NetworkingV1().Ingresses("default").Create(context.Background(), ingressObject, metav1.CreateOptions{})
 		if err != nil {
+			println("ingress:", err.Error())
 			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
 		host := fmt.Sprintf("for external access, domain name is: postgres.%s.kaas.local", code)
 		return ctx.JSON(http.StatusOK, host)
 	} else {
-		serviceName := fmt.Sprintf("for internal access, service name: is %s-service", code)
+		serviceName := fmt.Sprintf("for internal access, service name: is postgres-%s-service", code)
 		return ctx.JSON(http.StatusOK, serviceName)
 	}
 }

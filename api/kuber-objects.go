@@ -20,11 +20,8 @@ import (
 )
 
 func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort int32, containerResource models.Resource, managed bool) *v1.Deployment {
-	appName := ""
 	if managed {
-		appName = fmt.Sprintf("postgres-%s", name)
-	} else {
-		appName = name
+		name = fmt.Sprintf("postgres-%s", name)
 	}
 	deployment := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -34,13 +31,13 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": appName,
+					"app": name,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app": appName,
+						"app": name,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -66,7 +63,7 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 					},
 					Containers: []corev1.Container{
 						{
-							Name:  appName,
+							Name:  name,
 							Image: fmt.Sprintf("%s:%s", imageAddress, imageTag),
 							Ports: []corev1.ContainerPort{
 								{
@@ -99,11 +96,8 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 }
 
 func CreateService(name string, servicePort int32, managed bool) *corev1.Service {
-	appName := ""
 	if managed {
-		appName = fmt.Sprintf("postgres-%s", name)
-	} else {
-		appName = name
+		name = fmt.Sprintf("postgres-%s", name)
 	}
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -111,7 +105,7 @@ func CreateService(name string, servicePort int32, managed bool) *corev1.Service
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app": appName,
+				"app": name,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -124,7 +118,10 @@ func CreateService(name string, servicePort int32, managed bool) *corev1.Service
 	return service
 }
 
-func CreateConfigMap(configMapData map[string]string, configName string) *corev1.ConfigMap {
+func CreateConfigMap(configMapData map[string]string, configName string, managed bool) *corev1.ConfigMap {
+	if managed {
+		configName = fmt.Sprintf("postgres-%s", configName)
+	}
 	configMap := &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigMap",
@@ -138,7 +135,10 @@ func CreateConfigMap(configMapData map[string]string, configName string) *corev1
 	return configMap
 }
 
-func CreateSecret(secretData map[string][]byte, secretName string) *corev1.Secret {
+func CreateSecret(secretData map[string][]byte, secretName string, managed bool) *corev1.Secret {
+	if managed {
+		secretName = fmt.Sprintf("postgres-%s", secretName)
+	}
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
@@ -156,6 +156,7 @@ func CreateIngress(name string, servicePort int32, managed bool) *networkingv1.I
 	host := ""
 	if managed {
 		host = fmt.Sprintf("postgres.%s", name)
+		name = fmt.Sprintf("postgres-%s", name)
 	} else {
 		host = name
 	}
@@ -197,48 +198,26 @@ func CreateIngress(name string, servicePort int32, managed bool) *networkingv1.I
 func CheckExistence(ctx echo.Context, req CreateObjectRequest) error {
 	_, err := configs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("%s-secret", req.AppName), metav1.GetOptions{})
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			return ctx.JSON(http.StatusNotAcceptable, SecretExist)
+		if errors.IsNotFound(err) {
+			return nil
 		}
-	}
-	_, err = configs.Client.CoreV1().ConfigMaps("default").Get(context.Background(), fmt.Sprintf("%s-config", req.AppName), metav1.GetOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return ctx.JSON(http.StatusNotAcceptable, ConfigExist)
-		}
-	}
-	_, err = configs.Client.AppsV1().Deployments("default").Get(context.Background(), fmt.Sprintf("%s-deployment", req.AppName), metav1.GetOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return ctx.JSON(http.StatusNotAcceptable, DeploymentExist)
-		}
-	}
-	_, err = configs.Client.CoreV1().Services("default").Get(context.Background(), fmt.Sprintf("%s-service", req.AppName), metav1.GetOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return ctx.JSON(http.StatusNotAcceptable, ServiceExist)
-		}
-	}
-	_, err = configs.Client.NetworkingV1().Ingresses("default").Get(context.Background(), fmt.Sprintf("%s-ingress", req.AppName), metav1.GetOptions{})
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return ctx.JSON(http.StatusNotAcceptable, IngressExist)
-		}
+	} else {
+		return ctx.JSON(http.StatusNotAcceptable, ObjectExist)
 	}
 	return nil
 }
 
-func PostgresExistence(code string, secretData map[string][]byte) string {
+func PostgresExistence(secretData map[string][]byte) string {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 	random := 10000 + rand.Intn(89999)
 	newCode := strconv.Itoa(random)
-	_, err := configs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("%s-secret", code), metav1.GetOptions{})
+	_, err := configs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("postgres-%s-secret", newCode), metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return PostgresExistence(newCode, secretData)
-		} else {
-			return ""
+			return newCode
 		}
+	} else {
+		return PostgresExistence(secretData)
 	}
-	return newCode
+	return ""
 }
