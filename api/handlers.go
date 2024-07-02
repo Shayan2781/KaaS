@@ -1,13 +1,14 @@
 package api
 
 import (
-	"KaaS/confgs"
+	"KaaS/configs"
 	"KaaS/models"
 	"context"
 	"fmt"
 	"github.com/labstack/echo/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
+	"strings"
 )
 
 const (
@@ -21,15 +22,15 @@ const (
 )
 
 type CreateObjectRequest struct {
-	AppName        string
-	Replicas       int32
-	ImageAddress   string
-	ImageTag       string
-	DomainAddress  string
-	ServicePort    int32
-	Resources      models.Resource
-	Envs           []models.Environment
-	ExternalAccess bool
+	AppName        string               `json:"AppName"`
+	Replicas       int32                `json:"Replicas"`
+	ImageAddress   string               `json:"ImageAddress"`
+	ImageTag       string               `json:"ImageTag"`
+	DomainAddress  string               `json:"DomainAddress"`
+	ServicePort    int32                `json:"ServicePort"`
+	Resources      models.Resource      `json:"Resources"`
+	Envs           []models.Environment `json:"Envs"`
+	ExternalAccess bool                 `json:"ExternalAccess"`
 }
 
 type ManagedObjectRequest struct {
@@ -55,37 +56,43 @@ func DeployUnmanagedObjects(ctx echo.Context) error {
 			configMapData[env.Key] = env.Value
 		}
 	}
-	secret := CreateSecret(secretData, req.AppName)
-	_, err = confgs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
+	appName := strings.ToLower(req.AppName)
+	secret := CreateSecret(secretData, appName)
+	_, err = configs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
 	if err != nil {
+		println(err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	configMap := CreateConfigMap(configMapData, req.AppName)
-	_, err = confgs.Client.CoreV1().ConfigMaps("default").Create(context.Background(), configMap, metav1.CreateOptions{})
+	configMap := CreateConfigMap(configMapData, appName)
+	_, err = configs.Client.CoreV1().ConfigMaps("default").Create(context.Background(), configMap, metav1.CreateOptions{})
 	if err != nil {
+		println(err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	deployment := CreateDeployment(req.AppName, req.ImageAddress, req.ImageTag, req.Replicas, req.ServicePort, req.Resources, false)
-	_, err = confgs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
+	deployment := CreateDeployment(appName, req.ImageAddress, req.ImageTag, req.Replicas, req.ServicePort, req.Resources, false)
+	_, err = configs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
 	if err != nil {
+		println(err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	service := CreateService(req.AppName, req.ServicePort, false)
-	_, err = confgs.Client.CoreV1().Services("default").Create(context.Background(), service, metav1.CreateOptions{})
+	service := CreateService(appName, req.ServicePort, false)
+	_, err = configs.Client.CoreV1().Services("default").Create(context.Background(), service, metav1.CreateOptions{})
 	if err != nil {
+		println("service: ", err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	if req.ExternalAccess {
-		ingressObject := CreateIngress(req.AppName, req.DomainAddress, req.ServicePort)
-		_, err = confgs.Client.NetworkingV1beta1().Ingresses("default").Create(context.Background(), ingressObject, metav1.CreateOptions{})
+		ingressObject := CreateIngress(appName, req.ServicePort, false)
+		_, err = configs.Client.NetworkingV1().Ingresses("default").Create(context.Background(), ingressObject, metav1.CreateOptions{})
 		if err != nil {
+			println("ingress: ", err.Error())
 			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
-		host := fmt.Sprintf("for external access domain address is %s.kaas.local", req.DomainAddress)
+		host := fmt.Sprintf("for external access, domain address is: %s.kaas.local", req.AppName)
 		return ctx.JSON(http.StatusOK, host)
 	} else {
-		podName := fmt.Sprintf("for internal access pod name is: %s", req.AppName)
-		return ctx.JSON(http.StatusOK, podName)
+		serviceName := fmt.Sprintf("for internal access, service name is: %s-service", req.AppName)
+		return ctx.JSON(http.StatusOK, serviceName)
 	}
 }
 
@@ -108,12 +115,12 @@ func DeployManagedObjects(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	secret := CreateSecret(secretData, code)
-	_, err := confgs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
+	_, err := configs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	configMap := CreateConfigMap(configMapData, code)
-	_, err = confgs.Client.CoreV1().ConfigMaps("default").Create(context.Background(), configMap, metav1.CreateOptions{})
+	_, err = configs.Client.CoreV1().ConfigMaps("default").Create(context.Background(), configMap, metav1.CreateOptions{})
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
@@ -122,25 +129,25 @@ func DeployManagedObjects(ctx echo.Context) error {
 		RAM: "1Gi",
 	}
 	deployment := CreateDeployment(code, "postgres", "13-alpine", 1, 5432, resource, true)
-	_, err = confgs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
+	_, err = configs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	service := CreateService(code, 5432, true)
-	_, err = confgs.Client.CoreV1().Services("default").Create(context.Background(), service, metav1.CreateOptions{})
+	_, err = configs.Client.CoreV1().Services("default").Create(context.Background(), service, metav1.CreateOptions{})
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	if req.ExternalAccess {
-		ingressObject := CreateIngress(code, "", 5432)
-		_, err = confgs.Client.NetworkingV1beta1().Ingresses("default").Create(context.Background(), ingressObject, metav1.CreateOptions{})
+		ingressObject := CreateIngress(code, 5432, true)
+		_, err = configs.Client.NetworkingV1().Ingresses("default").Create(context.Background(), ingressObject, metav1.CreateOptions{})
 		if err != nil {
 			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
-		host := fmt.Sprintf("for external access domain name is postgres.%s.kaas.local", code)
+		host := fmt.Sprintf("for external access, domain name is: postgres.%s.kaas.local", code)
 		return ctx.JSON(http.StatusOK, host)
 	} else {
-		podName := fmt.Sprintf("for internal access pod name is postgres-%s", code)
-		return ctx.JSON(http.StatusOK, podName)
+		serviceName := fmt.Sprintf("for internal access, service name: is %s-service", code)
+		return ctx.JSON(http.StatusOK, serviceName)
 	}
 }

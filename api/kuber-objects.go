@@ -1,14 +1,14 @@
 package api
 
 import (
-	"KaaS/confgs"
+	"KaaS/configs"
 	"KaaS/models"
 	"context"
 	"fmt"
 	"github.com/labstack/echo/v4"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1beta1 "k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +23,8 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 	appName := ""
 	if managed {
 		appName = fmt.Sprintf("postgres-%s", name)
+	} else {
+		appName = name
 	}
 	deployment := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -73,7 +75,6 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 							},
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
-
 									corev1.ResourceCPU:    resource.MustParse(containerResource.CPU),
 									corev1.ResourceMemory: resource.MustParse(containerResource.RAM),
 								},
@@ -101,6 +102,8 @@ func CreateService(name string, servicePort int32, managed bool) *corev1.Service
 	appName := ""
 	if managed {
 		appName = fmt.Sprintf("postgres-%s", name)
+	} else {
+		appName = name
 	}
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -149,29 +152,36 @@ func CreateSecret(secretData map[string][]byte, secretName string) *corev1.Secre
 	return secret
 }
 
-func CreateIngress(name, domainAddress string, servicePort int32) *networkingv1beta1.Ingress {
+func CreateIngress(name string, servicePort int32, managed bool) *networkingv1.Ingress {
 	host := ""
-	if domainAddress == "" {
+	if managed {
 		host = fmt.Sprintf("postgres.%s", name)
 	} else {
-		host = domainAddress
+		host = name
 	}
-	ingress := &networkingv1beta1.Ingress{
+	pathType := networkingv1.PathTypePrefix
+	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%s-ingress", name),
+			Name:      fmt.Sprintf("%s-ingress", name),
+			Namespace: "default",
 		},
-		Spec: networkingv1beta1.IngressSpec{
-			Rules: []networkingv1beta1.IngressRule{
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
 				{
 					Host: fmt.Sprintf("%s.kaas.local", host),
-					IngressRuleValue: networkingv1beta1.IngressRuleValue{
-						HTTP: &networkingv1beta1.HTTPIngressRuleValue{
-							Paths: []networkingv1beta1.HTTPIngressPath{
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
 								{
-									Path: "/",
-									Backend: networkingv1beta1.IngressBackend{
-										ServiceName: fmt.Sprintf("%s-service", name),
-										ServicePort: intstr.FromInt32(servicePort),
+									PathType: &pathType,
+									Path:     "/",
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: fmt.Sprintf("%s-service", name),
+											Port: networkingv1.ServiceBackendPort{
+												Number: servicePort,
+											},
+										},
 									},
 								},
 							},
@@ -185,44 +195,34 @@ func CreateIngress(name, domainAddress string, servicePort int32) *networkingv1b
 }
 
 func CheckExistence(ctx echo.Context, req CreateObjectRequest) error {
-	_, err := confgs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("%s-secret", req.AppName), metav1.GetOptions{})
+	_, err := configs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("%s-secret", req.AppName), metav1.GetOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) {
 			return ctx.JSON(http.StatusNotAcceptable, SecretExist)
-		} else {
-			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
 	}
-	_, err = confgs.Client.CoreV1().ConfigMaps("default").Get(context.Background(), fmt.Sprintf("%s-config", req.AppName), metav1.GetOptions{})
+	_, err = configs.Client.CoreV1().ConfigMaps("default").Get(context.Background(), fmt.Sprintf("%s-config", req.AppName), metav1.GetOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) {
 			return ctx.JSON(http.StatusNotAcceptable, ConfigExist)
-		} else {
-			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
 	}
-	_, err = confgs.Client.AppsV1().Deployments("default").Get(context.Background(), fmt.Sprintf("%s-deployment", req.AppName), metav1.GetOptions{})
+	_, err = configs.Client.AppsV1().Deployments("default").Get(context.Background(), fmt.Sprintf("%s-deployment", req.AppName), metav1.GetOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) {
 			return ctx.JSON(http.StatusNotAcceptable, DeploymentExist)
-		} else {
-			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
 	}
-	_, err = confgs.Client.CoreV1().Services("default").Get(context.Background(), fmt.Sprintf("%s-service", req.AppName), metav1.GetOptions{})
+	_, err = configs.Client.CoreV1().Services("default").Get(context.Background(), fmt.Sprintf("%s-service", req.AppName), metav1.GetOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) {
 			return ctx.JSON(http.StatusNotAcceptable, ServiceExist)
-		} else {
-			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
 	}
-	_, err = confgs.Client.NetworkingV1().Ingresses("default").Get(context.Background(), fmt.Sprintf("%s-ingress", req.AppName), metav1.GetOptions{})
+	_, err = configs.Client.NetworkingV1().Ingresses("default").Get(context.Background(), fmt.Sprintf("%s-ingress", req.AppName), metav1.GetOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if !errors.IsNotFound(err) {
 			return ctx.JSON(http.StatusNotAcceptable, IngressExist)
-		} else {
-			return ctx.JSON(http.StatusInternalServerError, InternalError)
 		}
 	}
 	return nil
@@ -232,7 +232,7 @@ func PostgresExistence(code string, secretData map[string][]byte) string {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 	random := 10000 + rand.Intn(89999)
 	newCode := strconv.Itoa(random)
-	_, err := confgs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("%s-secret", code), metav1.GetOptions{})
+	_, err := configs.Client.CoreV1().Secrets("default").Get(context.Background(), fmt.Sprintf("%s-secret", code), metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return PostgresExistence(newCode, secretData)

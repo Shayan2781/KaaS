@@ -1,12 +1,12 @@
 package models
 
 type Environment struct {
-	Key      string
-	Value    string
-	IsSecret bool
+	Key      string `json:"Key"`
+	Value    string `json:"Value"`
+	IsSecret bool   `json:"IsSecret"`
 }
 
 type Resource struct {
-	CPU string
-	RAM string
+	CPU string `json:"CPU"`
+	RAM string `json:"RAM"`
 }

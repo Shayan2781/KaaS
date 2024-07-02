@@ -2,12 +2,12 @@ package main
 
 import (
 	"KaaS/api"
-	"KaaS/confgs"
+	"KaaS/configs"
 	"github.com/labstack/echo/v4"
 )
 
 func main() {
-	confgs.CreateClient()
+	configs.CreateClient()
 	server := echo.New()
 	api.Routes(server)
 }
