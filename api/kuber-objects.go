@@ -41,26 +41,6 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 					},
 				},
 				Spec: corev1.PodSpec{
-					Volumes: []corev1.Volume{
-						{
-							Name: "config-volume",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: fmt.Sprintf("%s-config", name),
-									},
-								},
-							},
-						},
-						{
-							Name: "secret-volume",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: fmt.Sprintf("%s-secret", name),
-								},
-							},
-						},
-					},
 					Containers: []corev1.Container{
 						{
 							Name:  name,
@@ -70,20 +50,26 @@ func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort
 									ContainerPort: servicePort,
 								},
 							},
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: fmt.Sprintf("%s-config", name),
+										},
+									},
+								},
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: fmt.Sprintf("%s-secret", name),
+										},
+									},
+								},
+							},
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse(containerResource.CPU),
 									corev1.ResourceMemory: resource.MustParse(containerResource.RAM),
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "config-volume",
-									MountPath: "/etc/config",
-								},
-								{
-									Name:      "secret-volume",
-									MountPath: "/etc/secret",
 								},
 							},
 						},

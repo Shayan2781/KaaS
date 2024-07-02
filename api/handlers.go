@@ -139,7 +139,7 @@ func DeployManagedObjects(ctx echo.Context) error {
 	deployment := CreateDeployment(code, "postgres", "13-alpine", 1, 5432, resource, true)
 	_, err = configs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
 	if err != nil {
-		println("deployment:", err)
+		println("deployment:", err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	service := CreateService(code, 5432, true)
