@@ -6,15 +6,18 @@ import (
 	"context"
 	"fmt"
 	"github.com/labstack/echo/v4"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"strings"
 )
 
 const (
-	InternalError = "Internal server error"
-	BadRequest    = "Request body doesn't have correct format"
-	ObjectExist   = "Object already exists"
+	InternalError       = "Internal server error"
+	BadRequest          = "Request body doesn't have correct format"
+	ObjectExist         = "Object already exists"
+	DeploymentExistence = "Deployment doesn't exist"
 )
 
 type CreateObjectRequest struct {
@@ -32,6 +35,13 @@ type CreateObjectRequest struct {
 type ManagedObjectRequest struct {
 	Envs           []models.Environment
 	ExternalAccess bool
+}
+
+type GetDeploymentResponse struct {
+	DeploymentName string             `json:"DeploymentName"`
+	Replicas       int32              `json:"Replicas"`
+	ReadyReplicas  int32              `json:"ReadyReplicas"`
+	PodStatuses    []models.PodStatus `json:"PodStatuses"`
 }
 
 func DeployUnmanagedObjects(ctx echo.Context) error {
@@ -151,4 +161,77 @@ func DeployManagedObjects(ctx echo.Context) error {
 		serviceName := fmt.Sprintf("for internal access, service name: is postgres-%s-service", code)
 		return ctx.JSON(http.StatusOK, serviceName)
 	}
+}
+
+func GetDeployment(ctx echo.Context) error {
+	res := GetDeploymentResponse{}
+	appName := ctx.Param("app-name")
+	deployment, err := configs.Client.AppsV1().Deployments("default").Get(context.Background(), fmt.Sprintf("%s-deployment", appName), metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return ctx.JSON(http.StatusNotAcceptable, DeploymentExistence)
+		}
+	}
+	pods, err := configs.Client.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, InternalError)
+	}
+	var filteredPods []*v1.Pod
+	for _, pod := range pods.Items {
+		if pod.Labels["app"] == appName {
+			filteredPods = append(filteredPods, &pod)
+		}
+	}
+	podStatuses := make([]models.PodStatus, len(filteredPods))
+	for i, pod := range filteredPods {
+		podStatuses[i] = models.PodStatus{
+			Name:      pod.Name,
+			Phase:     string(pod.Status.Phase),
+			HostID:    pod.Status.HostIP,
+			PodIP:     pod.Status.PodIP,
+			StartTime: pod.Status.StartTime.String(),
+		}
+	}
+	res.DeploymentName = deployment.Name
+	res.Replicas = deployment.Status.Replicas
+	res.ReadyReplicas = deployment.Status.ReadyReplicas
+	res.PodStatuses = podStatuses
+	return ctx.JSON(http.StatusOK, res)
+}
+
+func GetAllDeployments(ctx echo.Context) error {
+	var res []GetDeploymentResponse
+	deployments, err := configs.Client.AppsV1().Deployments("default").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, InternalError)
+	}
+	pods, err := configs.Client.CoreV1().Pods("default").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, InternalError)
+	}
+	res = make([]GetDeploymentResponse, len(deployments.Items))
+	for i, deployment := range deployments.Items {
+		var filteredPods []*v1.Pod
+		for _, pod := range pods.Items {
+			deploymentName := fmt.Sprintf("%s-deployment", pod.Labels["app"])
+			if deploymentName == deployment.Name {
+				filteredPods = append(filteredPods, &pod)
+			}
+		}
+		podStatuses := make([]models.PodStatus, len(filteredPods))
+		for j, pod := range filteredPods {
+			podStatuses[j] = models.PodStatus{
+				Name:      pod.Name,
+				Phase:     string(pod.Status.Phase),
+				HostID:    pod.Status.HostIP,
+				PodIP:     pod.Status.PodIP,
+				StartTime: pod.Status.StartTime.String(),
+			}
+		}
+		res[i].DeploymentName = deployment.Name
+		res[i].Replicas = deployment.Status.Replicas
+		res[i].ReadyReplicas = deployment.Status.ReadyReplicas
+		res[i].PodStatuses = podStatuses
+	}
+	return ctx.JSON(http.StatusOK, res)
 }
