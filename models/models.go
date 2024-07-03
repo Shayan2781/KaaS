@@ -6,6 +6,11 @@ type Environment struct {
 	IsSecret bool   `json:"IsSecret"`
 }
 
+type EnvironmentConfig struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
+}
+
 type Resource struct {
 	CPU string `json:"CPU"`
 	RAM string `json:"RAM"`
