@@ -1,0 +1,27 @@
+image:
+  repository: localhost:5000/nodejs-test:0.0.1
+  port: 3000
+
+replicaCount: 1
+
+autoScaling: 
+  maxReplicas: 10
+  averageCPU: 800m
+  averageRelativeMemory: 50
+
+service: 
+  port: 80
+  targetPort: 3000
+  type: ClusterIP
+
+ingress:
+  name: kaas-api-ingress
+  ClassName: nginx
+  host: kaas-api.example
+  service:
+    name: kaas-api
+    port: 3000
+
+metadata:
+  name: kaas-api
+  namespace: default
