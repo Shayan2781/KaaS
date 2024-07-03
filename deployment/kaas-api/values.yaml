@@ -1,5 +1,6 @@
 image:
-  repository: localhost:5000/nodejs-test
+  repository: localhost:5000/nodejs-test:0.0.1
+  port: 3000
 
 replicaCount: 1
 
@@ -7,7 +8,6 @@ autoScaling:
   maxReplicas: 10
   averageCPU: 800m
   averageRelativeMemory: 50
-
 
 service: 
   port: 80
@@ -25,52 +25,3 @@ ingress:
 metadata:
   name: kaas-api
   namespace: default
-#Prometheus
-pv: 
-  name: prometheus
-  storage: 4Gi
-  accessMode: ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: prometheus-class
-  path: /prometheus-data
-  nodeSelectorTerms: 
-    key: kubernetes.io/hostname
-    operator: In
-    values: <NODE_PROMETHEUS_RUNS>
-
-prometheus:
-  prometheusSpec:    
-    storageSpec: 
-     volumeClaimTemplate:
-       spec:
-         storageClassName: prometheus-class
-         accessModes: ["ReadWriteOnce"]
-         resources:
-           requests:
-             storage: 4Gi
-
-# #Grafana
-# pv: 
-#   name: Grafana
-#   storage: 4Gi
-#   accessMode: ReadWriteOnce
-#   persistentVolumeReclaimPolicy: Retain
-#   storageClassName: Grafana-class
-#   path: /grafana-data
-#   nodeSelectorTerms: 
-#     key: kubernetes.io/hostname
-#     operator: In
-#     values: <NODE_GRAFANA_RUNS>
-
-# prometheus:
-#   prometheusSpec:    
-#     storageSpec: 
-#      volumeClaimTemplate:
-#        spec:
-#          storageClassName: Prometheus-class
-#          accessModes: ["ReadWriteOnce"]
-#          resources:
-#            requests:
-#              storage: 4Gi
-
-
