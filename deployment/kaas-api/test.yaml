@@ -1,0 +1,111 @@
+---
+# Source: kaas-api/templates/pv.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus
+spec:
+  capacity:
+    storage:  4Gi
+  volumeMode: Filesystem
+  accessModes:
+  -  ReadWriteOnce
+  persistentVolumeReclaimPolicy:  Retain
+  storageClassName: prometheus-class
+  local:
+    path: /prometheus-data
+
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - <NODE_PROMETHEUS_RUNS>
+---
+# Source: kaas-api/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kaas-api
+  labels:
+    app: kaas-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: kaas-api
+---
+# Source: kaas-api/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: release-name-kaas-api
+  label:
+    app: kaas-api
+spec:
+  replicas: 1
+  autoScaling:
+    horizontal:
+      maxReplicas: 10
+      averageCPU: 
+      averageRelativeMemory: 50
+  selector:
+    matchLabels:
+      app: kaas-api
+  template:
+    metadata:
+      labels:
+        app: kaas-api
+    spec:
+      containers:
+      - name: kaas-api
+        image: localhost:5000/nodejs-test
+        ports:
+        - containerPort: 8080
+---
+# Source: kaas-api/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kaas-api-ingress
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: kaas-api.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kaas-api
+                port:
+                  number: 3000
+---
+# Source: kaas-api/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "release-name-kaas-api-test-connection"
+  labels:
+    helm.sh/chart: kaas-api-0.1.0
+    app.kubernetes.io/name: kaas-api
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['release-name-kaas-api:80']
+  restartPolicy: Never

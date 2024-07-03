@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kaas-api.fullname" . }}
+  # label:
+  #   app: {{ include "kaas-api.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # autoScaling:
+  #   horizontal:
+  #     maxReplicas: {{ .Values.autoScaling.maxReplicas }}
+  #     averageCPU: {{ .Values.autoScaling.averageCpu }}
+  #     averageRelativeMemory: {{ .Values.autoScaling.averageRelativeMemory }}
+  selector:
+    matchLabels:
+      app: {{ include "kaas-api.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "kaas-api.name" . }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: {{ .Values.image.repository}}
+        ports:
+        - containerPort: 8080
+
+  
