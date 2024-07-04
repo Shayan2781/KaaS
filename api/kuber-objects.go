@@ -28,7 +28,7 @@ const (
 	numBytes     = "0123456789"
 )
 
-func CreateDeployment(configMapData, secretData map[string]string, name, imageAddress, imageTag string, replicas, servicePort int32, containerResource models.Resource, managed, monitor bool) *v1.Deployment {
+func CreateDeployment(configMapData map[string]string, secretData map[string][]byte, name, imageAddress, imageTag string, replicas, servicePort int32, containerResource models.Resource, managed, monitor bool) *v1.Deployment {
 	if managed {
 		name = fmt.Sprintf("postgres-%s", name)
 	}
@@ -64,22 +64,22 @@ func CreateDeployment(configMapData, secretData map[string]string, name, imageAd
 									ContainerPort: servicePort,
 								},
 							},
-							//EnvFrom: []corev1.EnvFromSource{
-							//	{
-							//		ConfigMapRef: &corev1.ConfigMapEnvSource{
-							//			LocalObjectReference: corev1.LocalObjectReference{
-							//				Name: fmt.Sprintf("%s-config", name),
-							//			},
-							//		},
-							//	},
-							//	{
-							//		SecretRef: &corev1.SecretEnvSource{
-							//			LocalObjectReference: corev1.LocalObjectReference{
-							//				Name: fmt.Sprintf("%s-secret", name),
-							//			},
-							//		},
-							//	},
-							//},
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: fmt.Sprintf("%s-config", name),
+										},
+									},
+								},
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: fmt.Sprintf("%s-secret", name),
+										},
+									},
+								},
+							},
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse(containerResource.CPU),
@@ -92,20 +92,6 @@ func CreateDeployment(configMapData, secretData map[string]string, name, imageAd
 			},
 		},
 	}
-	envs := make([]corev1.EnvVar, 0)
-	for configKey := range configMapData {
-		envs = append(envs, corev1.EnvVar{
-			Name:  configKey,
-			Value: configMapData[configKey],
-		})
-	}
-	for secretKey := range secretData {
-		envs = append(envs, corev1.EnvVar{
-			Name:  secretKey,
-			Value: configMapData[secretKey],
-		})
-	}
-	deployment.Spec.Template.Spec.Containers[0].Env = envs
 	return deployment
 }
 
@@ -124,7 +110,7 @@ func CreateService(name string, servicePort int32, managed bool) *corev1.Service
 			Ports: []corev1.ServicePort{
 				{
 					Protocol:   corev1.ProtocolTCP,
-					Port:       int32(80),
+					Port:       servicePort,
 					TargetPort: intstr.FromInt32(servicePort),
 				},
 			},
@@ -150,7 +136,7 @@ func CreateConfigMap(configMapData map[string]string, configName string, managed
 	return configMap
 }
 
-func CreateSecret(secretData map[string]string, secretName string, managed bool) *corev1.Secret {
+func CreateSecret(secretData map[string][]byte, secretName string, managed bool) *corev1.Secret {
 	if managed {
 		secretName = fmt.Sprintf("postgres-%s", secretName)
 	}
@@ -162,13 +148,13 @@ func CreateSecret(secretData map[string]string, secretName string, managed bool)
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-secret", secretName),
 		},
-		StringData: secretData,
+		Data: secretData,
 	}
 	return secret
 }
 
 func CreateCronJob(appName, imageAddress, imageTag string, servicePort int32) *cronv1.CronJob {
-	//servicePortStr := strconv.Itoa(int(servicePort))
+	servicePortStr := strconv.Itoa(int(servicePort))
 	serviceName := fmt.Sprintf("%s-service", appName)
 	cronJob := &cronv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -189,7 +175,7 @@ func CreateCronJob(appName, imageAddress, imageTag string, servicePort int32) *c
 								{
 									Name:    appName,
 									Image:   fmt.Sprintf("%s:%s", imageAddress, imageTag),
-									Command: []string{"sh", "-c", fmt.Sprintf("while true; do curl http://%s:80/healthz | grep \"^HTTP/\"; sleep 5; done", serviceName)},
+									Command: []string{"sh", "-c", fmt.Sprintf("while true; do curl http://%s:%s/healthz | grep \"^HTTP/\"; sleep 5; done", servicePortStr, serviceName)},
 								},
 							},
 							RestartPolicy: corev1.RestartPolicyOnFailure,
@@ -201,6 +187,107 @@ func CreateCronJob(appName, imageAddress, imageTag string, servicePort int32) *c
 	}
 	return cronJob
 }
+
+func CreateStatefulSet(name, imageAddress, imageTag string, replicas, servicePort int32, containerResource models.Resource) *v1.StatefulSet {
+	statefulSet := &v1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("postgres-%s-statefulset", name),
+		},
+		Spec: v1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": fmt.Sprintf("postgres-%s", name),
+				},
+			},
+			ServiceName: fmt.Sprintf("postgres-%s-service", name),
+			Replicas:    &replicas,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": fmt.Sprintf("postgres-%s", name),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Image: fmt.Sprintf("%s:%s", imageAddress, imageTag),
+							Name:  fmt.Sprintf("postgres-%s", name),
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: servicePort,
+								},
+							},
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: fmt.Sprintf("postgres-%s-config", name),
+										},
+									},
+								},
+								{
+									SecretRef: &corev1.SecretEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: fmt.Sprintf("postgres-%s-secret", name),
+										},
+									},
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse(containerResource.CPU),
+									corev1.ResourceMemory: resource.MustParse(containerResource.RAM),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return statefulSet
+}
+
+//func CreatePVC(name string) *corev1.PersistentVolumeClaim {
+//	pvc := &corev1.PersistentVolumeClaim{
+//		ObjectMeta: metav1.ObjectMeta{
+//			Name:      fmt.Sprintf("postgres-%s-pvc", name),
+//			Namespace: "default",
+//		},
+//		Spec: corev1.PersistentVolumeClaimSpec{
+//			AccessModes: []corev1.PersistentVolumeAccessMode{
+//				corev1.ReadWriteOnce,
+//			},
+//			Resources: corev1.VolumeResourceRequirements{
+//				Requests: corev1.ResourceList{
+//					corev1.ResourceStorage: resource.MustParse("10Gi"),
+//				},
+//			},
+//		},
+//	}
+//	return pvc
+//}
+//
+//func CreatePV(name string) *corev1.PersistentVolume {
+//	pv := &corev1.PersistentVolume{
+//		ObjectMeta: metav1.ObjectMeta{
+//			Name:      fmt.Sprintf("postgres-%s-pv", name),
+//			Namespace: "default",
+//		},
+//		Spec: corev1.PersistentVolumeSpec{
+//			AccessModes:                   []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+//			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+//			Capacity:                      corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
+//			ClaimRef: &corev1.ObjectReference{
+//				APIVersion: "v1",
+//				Kind:       "PersistentVolumeClaim",
+//				Name:       fmt.Sprintf("postgres-%s-pvc", name),
+//				Namespace:  "default",
+//			},
+//		},
+//	}
+//	return pv
+//}
 
 func CreateIngress(name string, servicePort int32, managed bool) *networkingv1.Ingress {
 	host := ""

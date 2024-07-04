@@ -4,7 +4,6 @@ import (
 	"KaaS/configs"
 	"KaaS/models"
 	"context"
-	b64 "encoding/base64"
 	"fmt"
 	"github.com/labstack/echo/v4"
 	"k8s.io/api/core/v1"
@@ -57,12 +56,11 @@ func DeployUnmanagedObjects(ctx echo.Context) error {
 	if err != nil {
 		return err
 	}
-	secretData := make(map[string]string)
+	secretData := make(map[string][]byte)
 	configMapData := make(map[string]string)
 	for _, env := range req.Envs {
 		if env.IsSecret {
-			encodedValue := b64.StdEncoding.EncodeToString([]byte(env.Value))
-			secretData[env.Key] = encodedValue
+			secretData[env.Key] = []byte(env.Value)
 		} else {
 			configMapData[env.Key] = env.Value
 		}
@@ -126,7 +124,7 @@ func DeployManagedObjects(ctx echo.Context) error {
 		return ctx.JSON(http.StatusBadRequest, BadRequest)
 	}
 	configMapData := make(map[string]string)
-	secretData := make(map[string]string)
+	secretData := make(map[string][]byte)
 	for _, env := range req.Envs {
 		configMapData[env.Key] = env.Value
 	}
@@ -134,8 +132,8 @@ func DeployManagedObjects(ctx echo.Context) error {
 	if code == "" {
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	secretData["DATABASE_USERNAME"] = b64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("user-%s", code)))
-	secretData["DATABASE_PASSWORD"] = b64.StdEncoding.EncodeToString([]byte(GeneratePassword(10, true, true, true)))
+	secretData["POSTGRES_USERNAME"] = []byte(fmt.Sprintf("user-%s", code))
+	secretData["POSTGRES_PASSWORD"] = []byte(GeneratePassword(10, true, true, true))
 	secret := CreateSecret(secretData, code, true)
 	_, err := configs.Client.CoreV1().Secrets("default").Create(context.Background(), secret, metav1.CreateOptions{})
 	if err != nil {
@@ -152,16 +150,28 @@ func DeployManagedObjects(ctx echo.Context) error {
 		CPU: "500m",
 		RAM: "1Gi",
 	}
-	deployment := CreateDeployment(configMapData, secretData, code, "postgres", "13-alpine", 1, 5432, resource, true, false)
-	_, err = configs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
-	if err != nil {
-		println("deployment:", err.Error())
-		return ctx.JSON(http.StatusInternalServerError, InternalError)
-	}
 	service := CreateService(code, 5432, true)
 	_, err = configs.Client.CoreV1().Services("default").Create(context.Background(), service, metav1.CreateOptions{})
 	if err != nil {
 		println("service:", err.Error())
+		return ctx.JSON(http.StatusInternalServerError, InternalError)
+	}
+	//pv := CreatePV(code)
+	//_, err = configs.Client.CoreV1().PersistentVolumes().Create(context.Background(), pv, metav1.CreateOptions{})
+	//if err != nil {
+	//	println("pv:", err.Error())
+	//	return ctx.JSON(http.StatusInternalServerError, InternalError)
+	//}
+	//pvc := CreatePVC(code)
+	//_, err = configs.Client.CoreV1().PersistentVolumeClaims("default").Create(context.Background(), pvc, metav1.CreateOptions{})
+	//if err != nil {
+	//	println("pvc:", err.Error())
+	//	return ctx.JSON(http.StatusInternalServerError, InternalError)
+	//}
+	stateFulSet := CreateStatefulSet(code, "postgres", "13-alpine", 1, 5432, resource)
+	_, err = configs.Client.AppsV1().StatefulSets("default").Create(context.Background(), stateFulSet, metav1.CreateOptions{})
+	if err != nil {
+		println("stateFulSet:", err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
 	res.Username = string(secretData["DATABASE_USERNAME"])
