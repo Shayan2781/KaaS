@@ -77,7 +77,7 @@ func DeployUnmanagedObjects(ctx echo.Context) error {
 		log.Println("configmap:", err.Error())
 		return ctx.JSON(http.StatusInternalServerError, InternalError)
 	}
-	deployment := CreateDeployment(configMapData, secretData, appName, req.ImageAddress, req.ImageTag, req.Replicas, req.ServicePort, req.Resources, false, req.Monitor)
+	deployment := CreateDeployment(appName, req.ImageAddress, req.ImageTag, req.Replicas, req.ServicePort, req.Resources, false, req.Monitor)
 	_, err = configs.Client.AppsV1().Deployments("default").Create(context.Background(), deployment, metav1.CreateOptions{})
 	if err != nil {
 		log.Println("deployment:", err.Error())

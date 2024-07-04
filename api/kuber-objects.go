@@ -15,10 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,7 +30,7 @@ const (
 	numBytes     = "0123456789"
 )
 
-func CreateDeployment(configMapData map[string]string, secretData map[string][]byte, name, imageAddress, imageTag string, replicas, servicePort int32, containerResource models.Resource, managed, monitor bool) *v1.Deployment {
+func CreateDeployment(name, imageAddress, imageTag string, replicas, servicePort int32, containerResource models.Resource, managed, monitor bool) *v1.Deployment {
 	if managed {
 		name = fmt.Sprintf("postgres-%s", name)
 	}
@@ -102,6 +104,9 @@ func CreateService(name string, servicePort int32, managed bool) *corev1.Service
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-service", name),
+			Labels: map[string]string{
+				"app.kubernetes.io/name": name,
+			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -175,7 +180,7 @@ func CreateCronJob(appName, imageAddress, imageTag string, servicePort int32) *c
 								{
 									Name:    appName,
 									Image:   fmt.Sprintf("%s:%s", imageAddress, imageTag),
-									Command: []string{"sh", "-c", fmt.Sprintf("while true; do curl http://%s:%s/healthz | grep \"^HTTP/\"; sleep 5; done", servicePortStr, serviceName)},
+									Command: []string{"sh", "-c", fmt.Sprintf(`while true; do curl -i http://%s:%s/healthz; sleep 5; done`, serviceName, servicePortStr)},
 								},
 							},
 							RestartPolicy: corev1.RestartPolicyOnFailure,
@@ -291,6 +296,7 @@ func CreateStatefulSet(name, imageAddress, imageTag string, replicas, servicePor
 
 func CreateIngress(name string, servicePort int32, managed bool) *networkingv1.Ingress {
 	host := ""
+	nginx := "nginx"
 	if managed {
 		host = fmt.Sprintf("postgres.%s", name)
 		name = fmt.Sprintf("postgres-%s", name)
@@ -304,6 +310,7 @@ func CreateIngress(name string, servicePort int32, managed bool) *networkingv1.I
 			Namespace: "default",
 		},
 		Spec: networkingv1.IngressSpec{
+			IngressClassName: &nginx,
 			Rules: []networkingv1.IngressRule{
 				{
 					Host: fmt.Sprintf("%s.kaas.local", host),
@@ -375,11 +382,6 @@ func GeneratePassword(length int, useLetters bool, useSpecial bool, useNum bool)
 }
 
 func GetJobsLogs(appName string) {
-	counter := 0
-	//_, err := configs.Client.BatchV1().CronJobs("default").Get(context.Background(), fmt.Sprintf("%s-cronjob", appName), metav1.GetOptions{})
-	//if err != nil {
-	//	log.Printf("failed to get %s-cronjob: %v", appName, err)
-	//}
 	for {
 		jobs, jobErr := configs.Client.BatchV1().Jobs("default").List(context.Background(), metav1.ListOptions{})
 		if jobErr != nil {
@@ -400,26 +402,40 @@ func GetJobsLogs(appName string) {
 				log.Printf("failed to get pods for job %s: %v", job.Name, podErr)
 			}
 			fmt.Println("length pod", len(pods.Items))
-			for i, pod := range pods.Items {
+			for _, pod := range pods.Items {
 				stdout, logErr := configs.Client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).Stream(context.Background())
 				if logErr != nil {
 					log.Printf("failed to get logs for pod %s: %v", pod.Name, logErr)
 				}
-				content, logErr := io.ReadAll(stdout)
+				if stdout == nil {
+					continue
+				}
+				responseHeader, logErr := io.ReadAll(stdout)
 				if logErr != nil {
 					log.Printf("failed to read content: %v", logErr)
 				}
-				println(counter)
-				counter++
-				fmt.Println(i, string(content))
+				headerTokens := strings.Split(string(responseHeader), " ")
+				statusCode := 0
+				for i, token := range headerTokens {
+					if strings.Contains(token, "HTTP/1.1") {
+						statusCode, _ = strconv.Atoi(headerTokens[i+1])
+						break
+					}
+				}
+				fmt.Println(statusCode)
+				if statusCode == 200 {
+
+				} else {
+
+				}
 			}
-			//err = configs.Client.BatchV1().Jobs(job.Namespace).Delete(context.Background(), job.Name, metav1.DeleteOptions{
-			//	GracePeriodSeconds: ptr.To(int64(0)),
-			//	PropagationPolicy:  ptr.To(metav1.DeletePropagationBackground),
-			//})
-			//if err != nil {
-			//	log.Printf("failed to delete job %s: %v", job.Name, podErr)
-			//}
+			err := configs.Client.BatchV1().Jobs(job.Namespace).Delete(context.Background(), job.Name, metav1.DeleteOptions{
+				GracePeriodSeconds: ptr.To(int64(0)),
+				PropagationPolicy:  ptr.To(metav1.DeletePropagationBackground),
+			})
+			if err != nil {
+				log.Printf("failed to delete job %s: %v", job.Name, podErr)
+			}
 		}
 		time.Sleep(time.Second * 5)
 	}
