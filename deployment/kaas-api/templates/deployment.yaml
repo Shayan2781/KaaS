@@ -4,11 +4,6 @@ metadata:
   name: {{ include "kaas-api.fullname" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  # autoScaling:
-  #   horizontal:
-  #     maxReplicas: {{ .Values.autoScaling.maxReplicas }}
-  #     averageCPU: {{ .Values.autoScaling.averageCpu }}
-  #     averageRelativeMemory: {{ .Values.autoScaling.averageRelativeMemory }}
   selector:
     matchLabels:
       app: {{ include "kaas-api.name" . }}

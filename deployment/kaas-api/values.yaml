@@ -1,13 +1,13 @@
 image:
-  repository: localhost:5000/nodejs-test:0.0.1
+  repository: localhost:5000/nodejs-test
   port: 3000
 
 replicaCount: 1
 
-autoScaling: 
-  maxReplicas: 10
-  averageCPU: 800m
-  averageRelativeMemory: 50
+# autoScaling: 
+#   maxReplicas: 10
+#   averageCPU: 800m
+#   averageRelativeMemory: 50
 
 service: 
   port: 80

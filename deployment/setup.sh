@@ -9,3 +9,7 @@ kubectl get secret --namespace default grafana -o jsonpath="{.data.admin-passwor
 echo "> Cluster Created Successfully! Run the next Commands"
 #1. minikube service prometheus-server-ext
 #2. minikube service grafana-ext
+#minikube addons enable metrics-server
+#kubectl autoscale deployment kaas-api --cpu-percent=50 --min=1 --max=10
+#helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+#helm upgrade --install metrics-server metrics-server/metrics-server
