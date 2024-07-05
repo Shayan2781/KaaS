@@ -22,5 +22,24 @@ spec:
         image: {{ .Values.image.repository }}
         ports:
         - containerPort: {{ .Values.image.port }}
+        args:
+        - /bin/sh
+        - -c
+        - touch /tmp/healthy; sleep 30; rm -f /tmp/healthy; sleep 600
+        livenessProbe:
+          exec:
+            command:
+            - cat
+            - /tmp/healthy
+          initialDelaySeconds: 60
+          periodSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - cat
+            - /tmp/healthy
+          initialDelaySeconds: 60
+          periodSeconds: 5
+      
 
   

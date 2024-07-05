@@ -1,6 +1,6 @@
 image:
-  repository: localhost:5000/nodejs-test:0.0.1
-  port: 3000
+  repository: localhost:5000/kaas-api:0.0.2
+  port: 8080
 
 replicaCount: 1
 
@@ -11,7 +11,7 @@ autoScaling:
 
 service: 
   port: 80
-  targetPort: 3000
+  targetPort: 8080
   type: ClusterIP
 
 ingress:
@@ -20,7 +20,7 @@ ingress:
   host: kaas-api.example
   service:
     name: kaas-api
-    port: 3000
+    port: 8080
 
 metadata:
   name: kaas-api

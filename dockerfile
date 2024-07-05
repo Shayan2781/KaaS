@@ -1,8 +1,5 @@
 FROM golang:latest
 
-COPY ./.kube /root/.kube
-COPY ./.minikube /home/shayan2781/.minikube
-
 WORKDIR /app
 
 COPY go.mod go.sum ./

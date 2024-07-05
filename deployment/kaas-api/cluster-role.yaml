@@ -1,0 +1,8 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: grant-all-access
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
